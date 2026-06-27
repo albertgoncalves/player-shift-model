@@ -15,7 +15,7 @@ def main():
     rng = np.random.default_rng(123456789)
 
     player_mu = 0
-    player_std = 0.1
+    player_std = 0.5
 
     n_players = 38
     n_shifts = 100
@@ -56,7 +56,7 @@ def main():
         "away_shots": [],
     }
 
-    times = rng.negative_binomial(10, 0.125, n_shifts)
+    times = rng.negative_binomial(5, 0.125, n_shifts)
 
     for i in range(n_shifts // 2):
         for j, (home_rows, away_rows) in enumerate(
