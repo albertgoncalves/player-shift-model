@@ -21,14 +21,14 @@ def main():
 
         (key, player_id) = column.split(".")
 
-        values = np.quantile(samples[column], [0.25, 0.5, 0.75])
+        (a, b, c) = np.quantile(samples[column], [0.25, 0.5, 0.75])
 
         results[key].append(
             {
                 "id": int(player_id),
-                f"model_{key}_025": values[0],
-                f"model_{key}_05": values[1],
-                f"model_{key}_075": values[2],
+                f"model_{key}_025": a,
+                f"model_{key}_05": b,
+                f"model_{key}_075": c,
             },
         )
 
@@ -54,8 +54,9 @@ def main():
     (fig, axs) = plt.subplots(n_rows, n_cols, figsize=(18, 10))
 
     for i, column in enumerate(list(samples.columns)[: n_rows * n_cols]):
-        axs[i // n_cols, i % n_cols].set_title(column)
-        axs[i // n_cols, i % n_cols].plot(samples[column])
+        ij = (i // n_cols, i % n_cols)
+        axs[*ij].set_title(column)
+        axs[*ij].plot(samples[column])
 
     plt.tight_layout()
     plt.show()
@@ -89,17 +90,18 @@ def main():
         for team in players.team.unique():
             subset = players.loc[players.team == team]
             axs[i].scatter(
-                subset[column],
                 subset[f"model_{column}_05"],
+                subset[column],
                 color=colors[team],
                 ec="w",
                 label=team,
             )
 
         for row in players.itertuples():
+            value = getattr(row, column)
             axs[i].plot(
-                [getattr(row, column), getattr(row, column)],
                 [getattr(row, f"model_{column}_025"), getattr(row, f"model_{column}_075")],
+                [value, value],
                 color=colors[row.team],
                 alpha=0.5,
             )
@@ -108,9 +110,9 @@ def main():
 
         axs[i].set_aspect("equal")
 
-        axs[i].set_xlabel("actual")
+        axs[i].set_xlabel("model")
 
-    axs[0].set_ylabel("model")
+    axs[0].set_ylabel("actual")
 
     plt.tight_layout()
     plt.show()
