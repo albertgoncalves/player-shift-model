@@ -8,6 +8,7 @@ mkShell {
             pandas
             scikit-learn
             scipy
+            seaborn
             statsmodels
         ]))
     ];

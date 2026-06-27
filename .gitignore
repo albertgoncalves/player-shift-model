@@ -3,5 +3,11 @@
 
 !*.nix
 
-!src/
+!Makefile
+
+!scripts/
 !*.py
+!*.sh
+
+!src/
+!*.stan
