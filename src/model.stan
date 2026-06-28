@@ -15,26 +15,16 @@ parameters {
     real intercept;
     real home_advantage;
 
-    real<lower=0> sigma_intercept;
-    real<lower=0> sigma_home_advantage;
-    real<lower=0> sigma_offense;
-    real<lower=0> sigma_defense;
-
     vector[n_players] offense;
     vector[n_players] defense;
 }
 
 model {
-    sigma_intercept ~ exponential(0.1);
-    sigma_home_advantage ~ exponential(0.1);
-    sigma_offense ~ exponential(0.1);
-    sigma_defense ~ exponential(0.1);
+    intercept ~ normal(0.0, 0.1);
+    home_advantage ~ normal(0.0, 0.1);
 
-    intercept ~ normal(0.0, sigma_intercept);
-    home_advantage ~ normal(0.0, sigma_home_advantage);
-
-    offense ~ normal(0.0, sigma_offense);
-    defense ~ normal(0.0, sigma_defense);
+    offense ~ normal(0.0, 0.1);
+    defense ~ normal(0.0, 0.1);
 
     real home_alpha;
     real away_alpha;

@@ -75,7 +75,12 @@ def wrangle_shifts(shifts):
 def wrangle_players(play_by_play):
     players = pd.DataFrame(
         [
-            {"playerId": player["playerId"], "positionCode": player["positionCode"]}
+            {
+                "playerId": player["playerId"],
+                "positionCode": player["positionCode"],
+                "firstName": player["firstName"]["default"],
+                "lastName": player["lastName"]["default"],
+            }
             for player in play_by_play["rosterSpots"]
         ],
     )
@@ -164,6 +169,8 @@ def main():
         "away_shots": [],
     }
 
+    player_metadata = {}
+
     for game_id in game_ids:
         with open(os.path.join("cache", f"play-by-play-{game_id}.json"), "r") as file:
             play_by_play = json.load(file)
@@ -171,11 +178,19 @@ def main():
         with open(os.path.join("cache", f"shifts-{game_id}.json"), "r") as file:
             shifts = json.load(file)
 
+        players = wrangle_players(play_by_play)
+
+        for row in players.itertuples():
+            player_metadata[row.playerId] = {
+                "firstName": row.firstName,
+                "lastName": row.lastName,
+            }
+
         append_data(
             play_by_play["homeTeam"]["id"],
             wrangle_shots(play_by_play),
             wrangle_shifts(shifts).merge(
-                wrangle_players(play_by_play)[["playerId", "positionCode"]],
+                players[["playerId", "positionCode"]],
                 on=["playerId"],
                 how="inner",
                 validate="m:1",
@@ -187,19 +202,21 @@ def main():
     for key in ["home_players", "away_players", "home_shots", "away_shots"]:
         assert data["n_shifts"] == len(data[key]), key
 
-    players = {}
-
+    k = 1
     for i in range(data["n_shifts"]):
         for key in ["home", "away"]:
             for j, player_id in enumerate(data[f"{key}_players"][i]):
-                index = players.get(player_id, len(players) + 1)
-                players[player_id] = index
+                index = player_metadata.get(player_id, {}).get("index")
+                if index is None:
+                    index = k
+                    k += 1
+                    player_metadata[player_id]["index"] = index
                 data[f"{key}_players"][i][j] = index
 
-    data["n_players"] = len(players)
+    data["n_players"] = len(player_metadata)
 
-    with open(os.path.join("out", "players.json"), "w") as file:
-        json.dump(players, file)
+    with open(os.path.join("out", "player_metadata.json"), "w") as file:
+        json.dump(player_metadata, file)
 
     with open(os.path.join("out", "data.json"), "w") as file:
         json.dump(data, file)

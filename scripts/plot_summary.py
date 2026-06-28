@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import json
 import os
 
 import matplotlib.pyplot as plt
@@ -19,23 +20,37 @@ def main():
         if not (column.startswith("offense") or column.startswith("defense")):
             continue
 
-        (key, player_id) = column.split(".")
+        (key, value) = column.split(".")
 
         (a, b, c) = np.quantile(samples[column], [0.25, 0.5, 0.75])
 
         results[key].append(
             {
-                "id": int(player_id),
+                "index": int(value),
                 f"{key}_025": a,
                 f"{key}_05": b,
                 f"{key}_075": c,
             },
         )
 
-    players = pd.DataFrame(results["offense"]).merge(
+    with open(os.path.join("out", "player_metadata.json"), "r") as file:
+        player_metadata = pd.DataFrame(
+            [
+                {**{"playerId": int(key)}, **value}
+                for key, value in json.load(file).items()
+                if value.get("index") is not None
+            ],
+        )
+
+    players = player_metadata.merge(
+        pd.DataFrame(results["offense"]),
+        on=["index"],
+        how="inner",
+        validate="1:1",
+    ).merge(
         pd.DataFrame(results["defense"]),
-        on=["id"],
-        how="outer",
+        on=["index"],
+        how="inner",
         validate="1:1",
     )
 
