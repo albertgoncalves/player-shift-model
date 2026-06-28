@@ -1,15 +1,11 @@
 with import <nixpkgs> {};
 mkShell {
     buildInputs = [
-        (python3.withPackages (ps: with ps; [
+        (python314.withPackages (ps: with ps; [
             black
             flake8
             matplotlib
             pandas
-            scikit-learn
-            scipy
-            seaborn
-            statsmodels
         ]))
     ];
     shellHook = ''

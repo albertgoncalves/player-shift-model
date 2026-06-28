@@ -2,27 +2,21 @@ data {
     int<lower=1> n_players;
     int<lower=1> n_shifts;
 
-    array[n_shifts] int<lower=1> time;
+    array[n_shifts] int<lower=1> durations;
 
-    array[n_shifts] int<lower=1, upper=n_players> home_player_1;
-    array[n_shifts] int<lower=1, upper=n_players> home_player_2;
-    array[n_shifts] int<lower=1, upper=n_players> home_player_3;
-    array[n_shifts] int<lower=1, upper=n_players> home_player_4;
-    array[n_shifts] int<lower=1, upper=n_players> home_player_5;
-
-    array[n_shifts] int<lower=1, upper=n_players> away_player_1;
-    array[n_shifts] int<lower=1, upper=n_players> away_player_2;
-    array[n_shifts] int<lower=1, upper=n_players> away_player_3;
-    array[n_shifts] int<lower=1, upper=n_players> away_player_4;
-    array[n_shifts] int<lower=1, upper=n_players> away_player_5;
+    array[n_shifts, 5] int<lower=1, upper=n_players> home_players;
+    array[n_shifts, 5] int<lower=1, upper=n_players> away_players;
 
     array[n_shifts] int<lower=0> home_shots;
     array[n_shifts] int<lower=0> away_shots;
 }
 
 parameters {
+    real intercept;
     real home_advantage;
 
+    real<lower=0> sigma_intercept;
+    real<lower=0> sigma_home_advantage;
     real<lower=0> sigma_offense;
     real<lower=0> sigma_defense;
 
@@ -31,46 +25,30 @@ parameters {
 }
 
 model {
-    sigma_offense ~ exponential(1.0);
-    sigma_defense ~ exponential(1.0);
+    sigma_intercept ~ exponential(0.1);
+    sigma_home_advantage ~ exponential(0.1);
+    sigma_offense ~ exponential(0.1);
+    sigma_defense ~ exponential(0.1);
+
+    intercept ~ normal(0.0, sigma_intercept);
+    home_advantage ~ normal(0.0, sigma_home_advantage);
 
     offense ~ normal(0.0, sigma_offense);
     defense ~ normal(0.0, sigma_defense);
 
-    home_advantage ~ normal(0.0, 1.0);
+    real home_alpha;
+    real away_alpha;
 
     for (i in 1:n_shifts) {
-        home_shots[i] ~ binomial_logit(
-            time[i],
+        home_alpha = 0;
+        away_alpha = 0;
 
-            offense[home_player_1[i]]
-            + offense[home_player_2[i]]
-            + offense[home_player_3[i]]
-            + offense[home_player_4[i]]
-            + offense[home_player_5[i]]
+        for (j in 1:5) {
+            home_alpha += offense[home_players[i, j]] + defense[away_players[i, j]];
+            away_alpha += offense[away_players[i, j]] + defense[home_players[i, j]];
+        }
 
-            + defense[away_player_1[i]]
-            + defense[away_player_2[i]]
-            + defense[away_player_3[i]]
-            + defense[away_player_4[i]]
-            + defense[away_player_5[i]]
-
-            + home_advantage
-        );
-        away_shots[i] ~ binomial_logit(
-            time[i],
-
-            offense[away_player_1[i]]
-            + offense[away_player_2[i]]
-            + offense[away_player_3[i]]
-            + offense[away_player_4[i]]
-            + offense[away_player_5[i]]
-
-            + defense[home_player_1[i]]
-            + defense[home_player_2[i]]
-            + defense[home_player_3[i]]
-            + defense[home_player_4[i]]
-            + defense[home_player_5[i]]
-        );
+        home_shots[i] ~ binomial_logit(durations[i], intercept + home_alpha + home_advantage);
+        away_shots[i] ~ binomial_logit(durations[i], intercept + away_alpha);
     }
 }

@@ -5,8 +5,9 @@ all: out/samples.csv out/summary.txt
 
 .PHONY: clean
 clean:
-	rm -r out/
-	rm -r build/
+	rm -rf cmdstan/
+	rm -rf build/
+	rm -rf out/
 
 cmdstan/bin/stanc:
 	./scripts/install_cmdstan.sh

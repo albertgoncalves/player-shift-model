@@ -26,20 +26,13 @@ def main():
         results[key].append(
             {
                 "id": int(player_id),
-                f"model_{key}_025": a,
-                f"model_{key}_05": b,
-                f"model_{key}_075": c,
+                f"{key}_025": a,
+                f"{key}_05": b,
+                f"{key}_075": c,
             },
         )
 
-    players = pd.read_csv(os.path.join("out", "players.csv"))
-
-    players = players.merge(
-        pd.DataFrame(results["offense"]),
-        on=["id"],
-        how="outer",
-        validate="1:1",
-    ).merge(
+    players = pd.DataFrame(results["offense"]).merge(
         pd.DataFrame(results["defense"]),
         on=["id"],
         how="outer",
@@ -64,55 +57,12 @@ def main():
 
     # ---
 
-    line = [
-        min(
-            players.offense.min(),
-            players.defense.min(),
-            players.model_offense_025.min(),
-            players.model_defense_025.min(),
-        ),
-        max(
-            players.offense.max(),
-            players.defense.max(),
-            players.model_offense_075.max(),
-            players.model_defense_075.max(),
-        ),
-    ]
+    (fig, ax) = plt.subplots(figsize=(8, 8))
 
-    (fig, axs) = plt.subplots(1, 2, sharex=True, sharey=True, figsize=(13, 7))
+    ax.set_xlabel("defense")
+    ax.set_ylabel("offense")
 
-    colors = ["tab:blue", "tab:orange"]
-
-    for i, column in enumerate(["offense", "defense"]):
-        axs[i].set_title(column)
-
-        axs[i].plot(line, line, color="k", alpha=0.25)
-        for team in players.team.unique():
-            subset = players.loc[players.team == team]
-            axs[i].scatter(
-                subset[f"model_{column}_05"],
-                subset[column],
-                color=colors[team],
-                ec="w",
-                label=team,
-            )
-
-        for row in players.itertuples():
-            value = getattr(row, column)
-            axs[i].plot(
-                [getattr(row, f"model_{column}_025"), getattr(row, f"model_{column}_075")],
-                [value, value],
-                color=colors[row.team],
-                alpha=0.5,
-            )
-
-        axs[i].legend(loc="center left", bbox_to_anchor=(1, 0.5), frameon=False)
-
-        axs[i].set_aspect("equal")
-
-        axs[i].set_xlabel("model")
-
-    axs[0].set_ylabel("actual")
+    ax.scatter(players.defense_05, players.offense_05, ec="w")
 
     plt.tight_layout()
     plt.show()

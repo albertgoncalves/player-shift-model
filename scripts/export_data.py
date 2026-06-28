@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import datetime
 import json
 import os
 
@@ -7,106 +8,198 @@ import numpy as np
 import pandas as pd
 
 
-def inv_logit(p):
-    return 1 / (1 + np.exp(-p))
+def parse_time(string):
+    time = datetime.time.strptime(string, "%M:%S")
+    return (time.minute * 60) + time.second
+
+
+def wrangle_shifts(shifts):
+    assert 0 < shifts["total"]
+
+    shifts = pd.DataFrame(shifts["data"])
+
+    shifts.loc[shifts.duration.isnull(), "duration"] = "00:00"
+    for column in ["startTime", "endTime", "duration"]:
+        shifts[column] = shifts[column].map(parse_time)
+
+    assert ((shifts.endTime - shifts.startTime) == shifts.duration).all()
+
+    shifts = shifts.loc[0 < shifts.duration].copy()
+
+    assert (shifts.detailCode == 0).all()
+    assert (shifts.typeCode == 517).all()
+    assert shifts.gameId.nunique() == 1
+
+    shifts = shifts[["teamId", "playerId", "period", "startTime", "endTime", "duration"]].copy()
+    shifts.sort_values(
+        ["period", "startTime", "endTime", "teamId", "playerId"],
+        ignore_index=True,
+        inplace=True,
+    )
+
+    splits = []
+
+    for period in shifts.period.unique():
+        subset0 = shifts.loc[shifts.period == period]
+
+        edges = np.unique(np.concatenate([subset0.startTime.values, subset0.endTime.values]))
+        for start, end in zip(edges[:-1], edges[1:]):
+            subset1 = subset0.loc[(subset0.startTime <= start) & (start < subset0.endTime)].copy()
+            subset1["startTime"] = start
+            subset1["endTime"] = end
+            subset1["duration"] = end - start
+            splits.append(subset1)
+
+    splits = pd.concat(splits, ignore_index=True)
+
+    combined = (
+        shifts.groupby(["playerId"], as_index=False)
+        .agg(before=("duration", "sum"))
+        .merge(
+            splits.groupby(["playerId"], as_index=False).agg(after=("duration", "sum")),
+            on=["playerId"],
+            how="outer",
+            validate="1:1",
+        )
+    )
+
+    for column in ["before", "after"]:
+        assert combined[column].notnull().all()
+    assert (combined.before == combined.after).all()
+
+    assert splits[["period", "startTime", "endTime", "playerId"]].duplicated().sum() == 0
+
+    return splits
+
+
+def wrangle_players(play_by_play):
+    players = pd.DataFrame(
+        [
+            {"playerId": player["playerId"], "positionCode": player["positionCode"]}
+            for player in play_by_play["rosterSpots"]
+        ],
+    )
+
+    assert players.positionCode.isin(["C", "L", "R", "D", "G"]).all()
+
+    return players
+
+
+def wrangle_shots(play_by_play):
+    shots = []
+    for event in play_by_play["plays"]:
+        if event["typeDescKey"] not in ["shot-on-goal", "blocked-shot", "missed-shot", "goal"]:
+            for key in ["shootingPlayerId", "scoringPlayerId"]:
+                assert event.get("details", {}).get(key, None) is None, event
+            continue
+
+        shots.append(
+            {
+                "period": event["periodDescriptor"]["number"],
+                "timeInPeriod": parse_time(event["timeInPeriod"]),
+                "teamId": event["details"]["eventOwnerTeamId"],
+                "situationCode": event["situationCode"],
+            },
+        )
+    return pd.DataFrame(shots)
+
+
+def append_data(home_team_id, shots, splits, data):
+    for row in splits[["period", "startTime", "endTime"]].drop_duplicates().itertuples():
+        subset_splits = splits.loc[
+            (splits.period == row.period)
+            & (splits.startTime == row.startTime)
+            & (splits.endTime == row.endTime),
+        ]
+
+        home_rows = subset_splits.teamId == home_team_id
+        assert home_rows.any() and (~home_rows).any()
+
+        goalie_rows = subset_splits.positionCode == "G"
+        assert goalie_rows.sum() <= 2
+
+        home_skaters = subset_splits.loc[home_rows & (~goalie_rows), "playerId"].tolist()
+        away_skaters = subset_splits.loc[(~home_rows) & (~goalie_rows), "playerId"].tolist()
+
+        home_goalies = (home_rows & goalie_rows).sum()
+        away_goalies = ((~home_rows) & goalie_rows).sum()
+
+        if not (
+            (len(home_skaters) == 5)
+            and (len(away_skaters) == 5)
+            and (home_goalies == 1)
+            and (away_goalies == 1)
+        ):
+            continue
+
+        subset_shots = shots.loc[
+            (shots.period == row.period)
+            & (row.startTime <= shots.timeInPeriod)
+            & (shots.timeInPeriod < row.endTime)
+            # TODO: Is this necessary?
+            & (shots.situationCode == "1551"),
+        ]
+
+        home_rows = subset_shots.teamId == home_team_id
+
+        data["durations"].append(row.endTime - row.startTime)
+        data["home_players"].append(home_skaters)
+        data["away_players"].append(away_skaters)
+        data["home_shots"].append(int(home_rows.sum()))
+        data["away_shots"].append(int((~home_rows).sum()))
 
 
 def main():
-    rng = np.random.default_rng(123456789)
-
-    player_mu = 0
-    player_std = 0.5
-
-    n_players = 38
-    n_shifts = 100
-
-    home_advantage = 1
-
-    players = pd.DataFrame(
-        {
-            "team": ([0] * (n_players // 2)) + ([1] * (n_players // 2)),
-            "offense": rng.normal(player_mu, player_std, n_players),
-            "defense": -rng.normal(player_mu, player_std, n_players),
-        },
-    )
-
-    players.reset_index(drop=False, inplace=True)
-    players.rename(columns={"index": "id"}, inplace=True)
-    players.id += 1
-
-    players.to_csv(os.path.join("out", "players.csv"), index=False)
-
-    # ---
+    game_ids = [
+        2025020001,
+        2025020050,
+        2025021014,
+    ]
 
     data = {
-        "n_players": n_players,
-        "n_shifts": n_shifts,
-        "time": [],
-        "home_player_1": [],
-        "home_player_2": [],
-        "home_player_3": [],
-        "home_player_4": [],
-        "home_player_5": [],
-        "away_player_1": [],
-        "away_player_2": [],
-        "away_player_3": [],
-        "away_player_4": [],
-        "away_player_5": [],
+        "durations": [],
+        "home_players": [],
+        "away_players": [],
         "home_shots": [],
         "away_shots": [],
     }
 
-    times = rng.negative_binomial(5, 0.125, n_shifts)
+    for game_id in game_ids:
+        with open(os.path.join("cache", f"play-by-play-{game_id}.json"), "r") as file:
+            play_by_play = json.load(file)
 
-    for i in range(n_shifts // 2):
-        for j, (home_rows, away_rows) in enumerate(
-            [
-                (players.team == 0, players.team == 1),
-                (players.team == 1, players.team == 0),
-            ],
-        ):
-            selected = {
-                "home": rng.choice(players.loc[home_rows, "id"], 5, replace=False),
-                "away": rng.choice(players.loc[away_rows, "id"], 5, replace=False),
-            }
+        with open(os.path.join("cache", f"shifts-{game_id}.json"), "r") as file:
+            shifts = json.load(file)
 
-            for key in ["home", "away"]:
-                for i, player_id in enumerate(selected[key]):
-                    data[f"{key}_player_{i + 1}"].append(int(player_id))
+        append_data(
+            play_by_play["homeTeam"]["id"],
+            wrangle_shots(play_by_play),
+            wrangle_shifts(shifts).merge(
+                wrangle_players(play_by_play)[["playerId", "positionCode"]],
+                on=["playerId"],
+                how="inner",
+                validate="m:1",
+            ),
+            data,
+        )
 
-            time = times[(i * 2) + j]
+    data["n_shifts"] = len(data["durations"])
+    for key in ["home_players", "away_players", "home_shots", "away_shots"]:
+        assert data["n_shifts"] == len(data[key]), key
 
-            data["time"].append(int(time))
-            data["home_shots"].append(
-                int(
-                    rng.binomial(
-                        time,
-                        inv_logit(
-                            players.loc[players.id.isin(selected["home"]), "offense"].sum()
-                            + players.loc[players.id.isin(selected["away"]), "defense"].sum()
-                            + home_advantage,
-                        ),
-                        1,
-                    )[0],
-                )
-            )
-            data["away_shots"].append(
-                int(
-                    rng.binomial(
-                        time,
-                        inv_logit(
-                            players.loc[players.id.isin(selected["away"]), "offense"].sum()
-                            + players.loc[players.id.isin(selected["home"]), "defense"].sum(),
-                        ),
-                        1,
-                    )[0],
-                )
-            )
+    players = {}
 
-    for key in data.keys():
-        if key in ["n_players", "n_shifts"]:
-            continue
-        assert n_shifts == len(data[key]), key
+    for i in range(data["n_shifts"]):
+        for key in ["home", "away"]:
+            for j, player_id in enumerate(data[f"{key}_players"][i]):
+                index = players.get(player_id, len(players) + 1)
+                players[player_id] = index
+                data[f"{key}_players"][i][j] = index
+
+    data["n_players"] = len(players)
+
+    with open(os.path.join("out", "players.json"), "w") as file:
+        json.dump(players, file)
 
     with open(os.path.join("out", "data.json"), "w") as file:
         json.dump(data, file)
