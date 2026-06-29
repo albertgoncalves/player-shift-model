@@ -145,13 +145,21 @@ def append_data(home_team_id, shots, splits, data):
             & (shots.situationCode == "1551"),
         ]
 
+        duration = row.endTime - row.startTime
+
         home_rows = subset_shots.teamId == home_team_id
 
-        data["durations"].append(row.endTime - row.startTime)
+        home_shots = int(home_rows.sum())
+        away_shots = int((~home_rows).sum())
+
+        assert home_shots <= duration
+        assert away_shots <= duration
+
+        data["duration"].append(duration)
         data["home_players"].append(home_skaters)
         data["away_players"].append(away_skaters)
-        data["home_shots"].append(int(home_rows.sum()))
-        data["away_shots"].append(int((~home_rows).sum()))
+        data["home_shots"].append(home_shots)
+        data["away_shots"].append(away_shots)
 
 
 def main():
@@ -162,7 +170,7 @@ def main():
     ]
 
     data = {
-        "durations": [],
+        "duration": [],
         "home_players": [],
         "away_players": [],
         "home_shots": [],
@@ -198,7 +206,7 @@ def main():
             data,
         )
 
-    data["n_shifts"] = len(data["durations"])
+    data["n_shifts"] = len(data["duration"])
     for key in ["home_players", "away_players", "home_shots", "away_shots"]:
         assert data["n_shifts"] == len(data[key]), key
 

@@ -4,12 +4,17 @@ import json
 import os
 
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
+import seaborn as sns
 
 
 def main():
+    with open(os.path.join("out", "data.json"), "r") as file:
+        data = json.load(file)
+
     samples = pd.read_csv(os.path.join("out", "samples.csv"), comment="#")
+
+    # ---
 
     results = {
         "offense": [],
@@ -21,17 +26,27 @@ def main():
             continue
 
         (key, value) = column.split(".")
+        results[key].append({"index": int(value), key: samples[column].mean()})
 
-        (a, b, c) = np.quantile(samples[column], [0.25, 0.5, 0.75])
+    # ---
 
-        results[key].append(
-            {
-                "index": int(value),
-                f"{key}_025": a,
-                f"{key}_05": b,
-                f"{key}_075": c,
-            },
-        )
+    check = pd.DataFrame(
+        {
+            key: samples[
+                [column for column in samples.columns if column.startswith(f"{key}_shots_check")]
+            ].sum(axis=1)
+            for key in ["home", "away"]
+        },
+    )
+
+    # ---
+
+    for key in ["home", "away"]:
+        data[f"{key}_shots_check"] = [
+            samples[column].mean()
+            for column in samples.columns
+            if column.startswith(f"{key}_shots_check")
+        ]
 
     with open(os.path.join("out", "player_metadata.json"), "r") as file:
         player_metadata = pd.DataFrame(
@@ -54,6 +69,10 @@ def main():
         validate="1:1",
     )
 
+    columns = ["firstName", "lastName"]
+    print(players.sort_values(["offense"], ascending=False)[columns + ["offense"]].head())
+    print(players.sort_values(["defense"], ascending=True)[columns + ["defense"]].head())
+
     # ---
 
     n_cols = 4
@@ -72,12 +91,15 @@ def main():
 
     # ---
 
-    (fig, ax) = plt.subplots(figsize=(8, 8))
+    (fig, axs) = plt.subplots(1, 3, figsize=(16, 8))
 
-    ax.set_xlabel("defense")
-    ax.set_ylabel("offense")
+    axs[0].scatter(players.defense, players.offense, ec="w")
+    axs[0].set_xlabel("defense")
+    axs[0].set_ylabel("offense")
 
-    ax.scatter(players.defense_05, players.offense_05, ec="w")
+    for i, key in enumerate(["home", "away"]):
+        sns.histplot(check[key], discrete=True, kde=True, ec="w", ax=axs[i + 1])
+        axs[i + 1].axvline(sum(data[f"{key}_shots"]), color="tomato")
 
     plt.tight_layout()
     plt.show()

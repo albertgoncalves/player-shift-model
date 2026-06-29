@@ -6,6 +6,7 @@ mkShell {
             flake8
             matplotlib
             pandas
+            seaborn
         ]))
     ];
     shellHook = ''
