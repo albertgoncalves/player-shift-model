@@ -86,7 +86,7 @@ def main():
         axs[*ij].plot(samples[column])
 
     plt.tight_layout()
-    plt.show()
+    plt.savefig(os.path.join("out", "summary.png"))
     plt.close()
 
     # ---
@@ -100,9 +100,10 @@ def main():
     for i, key in enumerate(["home", "away"]):
         sns.histplot(check[key], discrete=True, kde=True, ec="w", ax=axs[i + 1])
         axs[i + 1].axvline(sum(data[f"{key}_shots"]), color="tomato")
+        axs[i + 1].set_ylabel("shots")
 
     plt.tight_layout()
-    plt.show()
+    plt.savefig(os.path.join("out", "samples.png"))
     plt.close()
 
 

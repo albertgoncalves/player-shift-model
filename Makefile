@@ -1,11 +1,10 @@
 .PHONY: all
-all: out/samples.csv out/summary.txt
+all: out/summary.txt out/samples.png
 	less out/summary.txt
-	./scripts/plot_summary.py
+	feh out/*.png
 
 .PHONY: clean
 clean:
-	rm -rf cmdstan/
 	rm -rf build/
 	rm -rf out/
 
@@ -29,3 +28,6 @@ out/samples.csv: build/model out/data.json
 
 out/summary.txt: out/samples.csv
 	./cmdstan/bin/stansummary out/samples.csv > out/summary.txt
+
+out/samples.png: out/samples.csv ./scripts/plot_summary.py
+	./scripts/plot_summary.py

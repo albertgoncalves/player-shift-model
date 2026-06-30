@@ -1,11 +1,82 @@
 #!/usr/bin/env python3
 
+from zoneinfo import ZoneInfo
+
 import datetime
 import json
+import logging
 import os
 
 import numpy as np
 import pandas as pd
+import requests
+
+# NOTE: See `https://github.com/Zmalski/NHL-API-Reference`.
+
+TIMEZONE = ZoneInfo("America/New_York")
+
+
+def last_modified(path):
+    return (
+        datetime.datetime.fromtimestamp(os.path.getmtime(path), ZoneInfo("UTC"))
+        .replace(tzinfo=ZoneInfo("UTC"))
+        .astimezone(TIMEZONE)
+    )
+
+
+def cache(f, path, now):
+    if os.path.exists(path) and ((now is None) or (last_modified(path).date() == now.date())):
+        with open(path, "r") as file:
+            return json.load(file)
+
+    x = f()
+    with open(path, "w") as file:
+        json.dump(x, file)
+
+    return x
+
+
+def get_and_cache(url, path, now):
+    def f():
+        response = requests.get(url, headers={"Content-Type": "application/json"})
+        response.raise_for_status()
+        return response.json()
+
+    return cache(f, path, now)
+
+
+def get_game_ids(year):
+    season = f"{year - 1}{year}"
+    now = datetime.datetime.now().astimezone(TIMEZONE)
+
+    teams = pd.DataFrame.from_dict(
+        get_and_cache(
+            "https://api.nhle.com/stats/rest/en/team",
+            os.path.join("cache", "team.json"),
+            now,
+        )["data"],
+    )
+    assert (teams.leagueId == 133).all()
+    assert (teams.triCode == teams.rawTricode).all()
+
+    game_ids = set()
+    for team_abbrev in teams.triCode:
+        schedule = get_and_cache(
+            f"https://api-web.nhle.com/v1/club-schedule-season/{team_abbrev}/{season}",
+            os.path.join("cache", f"club-schedule-season-{team_abbrev}-{season}.json"),
+            now,
+        )
+
+        if len(schedule["games"]) == 0:
+            continue
+
+        for game in schedule["games"]:
+            if (game["gameType"] != 2) or (game["gameState"] != "OFF"):
+                continue
+
+            game_ids.add(game["id"])
+
+    return sorted(game_ids)
 
 
 def parse_time(string):
@@ -17,12 +88,17 @@ def wrangle_shifts(shifts):
     assert 0 < shifts["total"]
 
     shifts = pd.DataFrame(shifts["data"])
+    shifts.drop_duplicates(
+        ["playerId", "period", "startTime", "endTime"],
+        ignore_index=True,
+        inplace=True,
+    )
 
-    shifts.loc[shifts.duration.isnull(), "duration"] = "00:00"
-    for column in ["startTime", "endTime", "duration"]:
+    assert shifts[["period", "startTime", "endTime", "playerId"]].duplicated().sum() == 0
+
+    for column in ["startTime", "endTime"]:
         shifts[column] = shifts[column].map(parse_time)
-
-    assert ((shifts.endTime - shifts.startTime) == shifts.duration).all()
+    shifts.duration = shifts.endTime - shifts.startTime
 
     shifts = shifts.loc[0 < shifts.duration].copy()
 
@@ -67,7 +143,11 @@ def wrangle_shifts(shifts):
         assert combined[column].notnull().all()
     assert (combined.before == combined.after).all()
 
-    assert splits[["period", "startTime", "endTime", "playerId"]].duplicated().sum() == 0
+    splits.drop_duplicates(
+        ["playerId", "period", "startTime", "endTime"],
+        ignore_index=True,
+        inplace=True,
+    )
 
     return splits
 
@@ -163,11 +243,8 @@ def append_data(home_team_id, shots, splits, data):
 
 
 def main():
-    game_ids = [
-        2025020001,
-        2025020050,
-        2025021014,
-    ]
+    logging.basicConfig()
+    logging.getLogger("urllib3").setLevel(logging.DEBUG)
 
     data = {
         "duration": [],
@@ -179,12 +256,25 @@ def main():
 
     player_metadata = {}
 
-    for game_id in game_ids:
-        with open(os.path.join("cache", f"play-by-play-{game_id}.json"), "r") as file:
-            play_by_play = json.load(file)
+    for game_id in get_game_ids(2026)[:10]:
+        play_by_play_path = os.path.join("cache", f"play-by-play-{game_id}.json")
+        play_by_play = get_and_cache(
+            f"https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play",
+            play_by_play_path,
+            None,
+        )
 
-        with open(os.path.join("cache", f"shifts-{game_id}.json"), "r") as file:
-            shifts = json.load(file)
+        shifts_path = os.path.join("cache", f"shifts-{game_id}.json")
+        shifts = get_and_cache(
+            f"https://api.nhle.com/stats/rest/en/shiftcharts?cayenneExp=gameId={game_id}",
+            shifts_path,
+            None,
+        )
+
+        if shifts["total"] == 0:
+            os.remove(play_by_play_path)
+            os.remove(shifts_path)
+            continue
 
         players = wrangle_players(play_by_play)
 
@@ -214,11 +304,11 @@ def main():
     for i in range(data["n_shifts"]):
         for key in ["home", "away"]:
             for j, player_id in enumerate(data[f"{key}_players"][i]):
-                index = player_metadata.get(player_id, {}).get("index")
+                index = player_metadata[player_id].get("index")
                 if index is None:
                     index = k
-                    k += 1
                     player_metadata[player_id]["index"] = index
+                    k += 1
                 data[f"{key}_players"][i][j] = index
 
     data["n_players"] = len(player_metadata)
