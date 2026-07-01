@@ -205,8 +205,8 @@ def append_data(home_team_id, shots, splits, data):
         goalie_rows = subset_splits.positionCode == "G"
         assert goalie_rows.sum() <= 2
 
-        home_skaters = subset_splits.loc[home_rows & (~goalie_rows), "playerId"].tolist()
-        away_skaters = subset_splits.loc[(~home_rows) & (~goalie_rows), "playerId"].tolist()
+        home_skaters = sorted(subset_splits.loc[home_rows & (~goalie_rows), "playerId"])
+        away_skaters = sorted(subset_splits.loc[(~home_rows) & (~goalie_rows), "playerId"])
 
         home_goalies = (home_rows & goalie_rows).sum()
         away_goalies = ((~home_rows) & goalie_rows).sum()
@@ -299,6 +299,23 @@ def main():
             ),
             data,
         )
+
+    # ---
+
+    data = pd.DataFrame(data)
+    columns = ["home_players", "away_players"]
+
+    for column in columns:
+        data[column] = data[column].map(json.dumps)
+
+    data = data.groupby(columns, as_index=False).agg(
+        {column: "sum" for column in ["duration", "home_shots", "away_shots"]},
+    )
+
+    for column in columns:
+        data[column] = data[column].map(json.loads)
+
+    data = data.to_dict(orient="list")
 
     # ---
 
