@@ -75,10 +75,19 @@ def main():
 
     # ---
 
-    check = pd.DataFrame(
+    train = pd.DataFrame(
         {
             key: samples[
-                [column for column in samples.columns if column.startswith(f"{key}_shots_check")]
+                [column for column in samples.columns if column.startswith(f"{key}_shots_train")]
+            ].sum(axis=1)
+            for key in ["home", "away"]
+        },
+    )
+
+    test = pd.DataFrame(
+        {
+            key: samples[
+                [column for column in samples.columns if column.startswith(f"{key}_shots_test")]
             ].sum(axis=1)
             for key in ["home", "away"]
         },
@@ -86,10 +95,12 @@ def main():
 
     # ---
 
+    figsize = (19.125, 11.25)
+
     n_cols = 4
     n_rows = 3
 
-    (fig, axs) = plt.subplots(n_rows, n_cols, figsize=(18, 10))
+    (fig, axs) = plt.subplots(n_rows, n_cols, figsize=figsize)
 
     for i, column in enumerate(list(samples.columns)[: n_rows * n_cols]):
         ij = (i // n_cols, i % n_cols)
@@ -102,16 +113,26 @@ def main():
 
     # ---
 
-    (fig, axs) = plt.subplots(1, 3, figsize=(16, 8))
+    (fig, axs) = plt.subplots(1, 5, figsize=figsize)
 
     axs[0].scatter(players.defense_mu, players.offense_mu, ec="w")
+    axs[0].set_title("players")
     axs[0].set_xlabel("defense_mu")
     axs[0].set_ylabel("offense_mu")
 
     for i, key in enumerate(["home", "away"]):
-        sns.histplot(check[key], discrete=True, kde=True, ec="w", ax=axs[i + 1])
-        axs[i + 1].axvline(sum(data[f"{key}_shots"]), color="tomato")
+        sns.histplot(train[key], discrete=True, kde=True, ec="w", ax=axs[i + 1])
+        axs[i + 1].axvline(sum(data[f"{key}_shots"][: data["n_train"]]), color="tomato")
+
+        axs[i + 1].set_title("train")
         axs[i + 1].set_ylabel("shots")
+
+    for i, key in enumerate(["home", "away"]):
+        sns.histplot(test[key], discrete=True, kde=True, ec="w", ax=axs[i + 3])
+        axs[i + 3].axvline(sum(data[f"{key}_shots"][data["n_train"] :]), color="tomato")
+
+        axs[i + 3].set_title("test")
+        axs[i + 3].set_ylabel("shots")
 
     plt.tight_layout()
     plt.savefig(os.path.join("out", "samples.png"))

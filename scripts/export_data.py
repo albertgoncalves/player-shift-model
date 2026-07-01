@@ -260,7 +260,7 @@ def main():
 
     player_metadata = {}
 
-    for game_id in get_game_ids(2026)[:10]:
+    for game_id in get_game_ids(2026)[:125]:
         play_by_play_path = os.path.join("cache", f"play-by-play-{game_id}.json")
         play_by_play = get_and_cache(
             f"https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play",
@@ -311,6 +311,7 @@ def main():
     data = data.groupby(columns, as_index=False).agg(
         {column: "sum" for column in ["duration", "home_shots", "away_shots"]},
     )
+    data = data.sample(frac=1, replace=False, ignore_index=True, random_state=123456789).copy()
 
     for column in columns:
         data[column] = data[column].map(json.loads)
@@ -321,6 +322,8 @@ def main():
 
     data["n_shifts"] = len(data["duration"])
     assert 0 < data["n_shifts"]
+
+    data["n_train"] = int(data["n_shifts"] * 0.5)
 
     for key in ["home_players", "away_players", "home_shots", "away_shots"]:
         assert data["n_shifts"] == len(data[key]), key
