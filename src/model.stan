@@ -26,46 +26,42 @@ model {
     offense ~ normal(0.0, 1.0);
     defense ~ normal(0.0, 1.0);
 
-    real home_alpha;
-    real away_alpha;
+    vector[n_shifts] home_alpha;
+    vector[n_shifts] away_alpha;
+
+    home_alpha = rep_vector(intercept + home_advantage, n_shifts);
+    away_alpha = rep_vector(intercept, n_shifts);
 
     for (i in 1:n_shifts) {
-        home_alpha = 0;
-        away_alpha = 0;
-
         for (j in 1:5) {
-            home_alpha += offense[home_players[i, j]] + defense[away_players[i, j]];
-            away_alpha += offense[away_players[i, j]] + defense[home_players[i, j]];
+            home_alpha[i] += offense[home_players[i, j]] + defense[away_players[i, j]];
+            away_alpha[i] += offense[away_players[i, j]] + defense[home_players[i, j]];
         }
-
-        home_alpha += intercept + home_advantage;
-        away_alpha += intercept;
-
-        home_shots[i] ~ binomial_logit(duration[i], home_alpha);
-        away_shots[i] ~ binomial_logit(duration[i], away_alpha);
     }
+
+    home_shots ~ binomial_logit(duration, home_alpha);
+    away_shots ~ binomial_logit(duration, away_alpha);
 }
 
 generated quantities {
     array[n_shifts] real<lower=0> home_shots_check;
     array[n_shifts] real<lower=0> away_shots_check;
 
-    real home_alpha;
-    real away_alpha;
+    {
+        vector[n_shifts] home_alpha;
+        vector[n_shifts] away_alpha;
 
-    for (i in 1:n_shifts) {
-        home_alpha = 0;
-        away_alpha = 0;
+        home_alpha = rep_vector(intercept + home_advantage, n_shifts);
+        away_alpha = rep_vector(intercept, n_shifts);
 
-        for (j in 1:5) {
-            home_alpha += offense[home_players[i, j]] + defense[away_players[i, j]];
-            away_alpha += offense[away_players[i, j]] + defense[home_players[i, j]];
+        for (i in 1:n_shifts) {
+            for (j in 1:5) {
+                home_alpha[i] += offense[home_players[i, j]] + defense[away_players[i, j]];
+                away_alpha[i] += offense[away_players[i, j]] + defense[home_players[i, j]];
+            }
         }
 
-        home_alpha += intercept + home_advantage;
-        away_alpha += intercept;
-
-        home_shots_check[i] = binomial_rng(duration[i], inv_logit(home_alpha));
-        away_shots_check[i] = binomial_rng(duration[i], inv_logit(away_alpha));
+        home_shots_check = binomial_rng(duration, inv_logit(home_alpha));
+        away_shots_check = binomial_rng(duration, inv_logit(away_alpha));
     }
 }

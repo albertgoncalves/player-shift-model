@@ -16,17 +16,62 @@ def main():
 
     # ---
 
-    results = {
-        "offense": [],
-        "defense": [],
+    with open(os.path.join("out", "player_metadata.json"), "r") as file:
+        player_metadata = pd.DataFrame(
+            [
+                {**{"playerId": int(key)}, **value}
+                for key, value in json.load(file).items()
+                if value.get("index") is not None
+            ],
+        )
+
+    assert data["n_players"] == len(player_metadata)
+
+    kwargs = {
+        "on": ["index"],
+        "how": "outer",
+        "validate": "1:1",
     }
 
-    for column in samples.columns:
-        if not (column.startswith("offense") or column.startswith("defense")):
-            continue
+    results = {}
 
-        (key, value) = column.split(".")
-        results[key].append({"index": int(value), key: samples[column].mean()})
+    for key in ["offense", "defense"]:
+        columns = [column for column in samples.columns if column.startswith(key)]
+        assert len(columns) == data["n_players"]
+
+        results[key] = []
+
+        for i in range(data["n_players"]):
+            column = columns[i]
+            assert f"{i + 1}" in column, (i, column)
+            results[key].append(
+                {
+                    "index": i + 1,
+                    f"{key}_mu": samples[column].mean(),
+                    f"{key}_std": samples[column].std(),
+                },
+            )
+
+    players = player_metadata.merge(pd.DataFrame(results["offense"]), **kwargs).merge(
+        pd.DataFrame(results["defense"]),
+        **kwargs,
+    )
+
+    for column in players.columns:
+        assert players[column].notnull().all(), column
+
+    for key in ["offense", "defense"]:
+        for ascending in [False, True]:
+            print(key, ascending)
+            print(
+                players.sort_values(
+                    [f"{key}_mu"],
+                    ascending=ascending,
+                )[
+                    ["firstName", "lastName", f"{key}_mu", f"{key}_std"]
+                ].head(5),
+            )
+            print()
 
     # ---
 
@@ -38,40 +83,6 @@ def main():
             for key in ["home", "away"]
         },
     )
-
-    # ---
-
-    for key in ["home", "away"]:
-        data[f"{key}_shots_check"] = [
-            samples[column].mean()
-            for column in samples.columns
-            if column.startswith(f"{key}_shots_check")
-        ]
-
-    with open(os.path.join("out", "player_metadata.json"), "r") as file:
-        player_metadata = pd.DataFrame(
-            [
-                {**{"playerId": int(key)}, **value}
-                for key, value in json.load(file).items()
-                if value.get("index") is not None
-            ],
-        )
-
-    players = player_metadata.merge(
-        pd.DataFrame(results["offense"]),
-        on=["index"],
-        how="inner",
-        validate="1:1",
-    ).merge(
-        pd.DataFrame(results["defense"]),
-        on=["index"],
-        how="inner",
-        validate="1:1",
-    )
-
-    columns = ["firstName", "lastName"]
-    print(players.sort_values(["offense"], ascending=False)[columns + ["offense"]].head())
-    print(players.sort_values(["defense"], ascending=True)[columns + ["defense"]].head())
 
     # ---
 
@@ -93,9 +104,9 @@ def main():
 
     (fig, axs) = plt.subplots(1, 3, figsize=(16, 8))
 
-    axs[0].scatter(players.defense, players.offense, ec="w")
-    axs[0].set_xlabel("defense")
-    axs[0].set_ylabel("offense")
+    axs[0].scatter(players.defense_mu, players.offense_mu, ec="w")
+    axs[0].set_xlabel("defense_mu")
+    axs[0].set_ylabel("offense_mu")
 
     for i, key in enumerate(["home", "away"]):
         sns.histplot(check[key], discrete=True, kde=True, ec="w", ax=axs[i + 1])

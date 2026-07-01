@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+# NOTE: See `https://github.com/Zmalski/NHL-API-Reference`.
+
 from zoneinfo import ZoneInfo
 
 import datetime
@@ -10,8 +12,6 @@ import os
 import numpy as np
 import pandas as pd
 import requests
-
-# NOTE: See `https://github.com/Zmalski/NHL-API-Reference`.
 
 TIMEZONE = ZoneInfo("America/New_York")
 
@@ -172,6 +172,7 @@ def wrangle_players(play_by_play):
 
 def wrangle_shots(play_by_play):
     shots = []
+
     for event in play_by_play["plays"]:
         if event["typeDescKey"] not in ["shot-on-goal", "blocked-shot", "missed-shot", "goal"]:
             for key in ["shootingPlayerId", "scoringPlayerId"]:
@@ -186,6 +187,7 @@ def wrangle_shots(play_by_play):
                 "situationCode": event["situationCode"],
             },
         )
+
     return pd.DataFrame(shots)
 
 
@@ -246,6 +248,8 @@ def main():
     logging.basicConfig()
     logging.getLogger("urllib3").setLevel(logging.DEBUG)
 
+    # ---
+
     data = {
         "duration": [],
         "home_players": [],
@@ -296,7 +300,11 @@ def main():
             data,
         )
 
+    # ---
+
     data["n_shifts"] = len(data["duration"])
+    assert 0 < data["n_shifts"]
+
     for key in ["home_players", "away_players", "home_shots", "away_shots"]:
         assert data["n_shifts"] == len(data[key]), key
 
@@ -311,7 +319,10 @@ def main():
                     k += 1
                 data[f"{key}_players"][i][j] = index
 
-    data["n_players"] = len(player_metadata)
+    data["n_players"] = k - 1
+    assert 0 < data["n_players"]
+
+    # ---
 
     with open(os.path.join("out", "player_metadata.json"), "w") as file:
         json.dump(player_metadata, file)
